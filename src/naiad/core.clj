@@ -3,9 +3,11 @@
   (:require [clojure.core :as clj]
             [clojure.core.async :as async]
             [naiad.graph :refer [add-node! gen-id id? *graph* ports insert-into-graph IToEdge
-                                    INode ->GraphSource]]
+                                 INode ->GraphSource]]
             [naiad.backends.csp :as csp]
-            [naiad.nodes :refer :all]))
+            [naiad.nodes :refer :all]
+            [naiad.graph :as graph])
+  (:import (naiad.nodes GenericTransducerNode)))
 
 
 
@@ -60,7 +62,6 @@
                           links)))
                     graph
                     new-nodes)]
-    (println graph "AFTER")
     graph))
 
 (defrecord OntoChan [id coll outputs]
@@ -81,9 +82,9 @@
 
   #_clojure.core.async.impl.protocols/ReadPort
   #_(insert-into-graph [this graph]
-    (let [id (gen-id)]
-      {:id    id
-       :graph (assoc graph id (->Pipe))})))
+      (let [id (gen-id)]
+        {:id    id
+         :graph (assoc graph id (->Pipe))})))
 
 
 (defn non-channel-edges-to-nodes [graph]
@@ -100,15 +101,47 @@
     graph
     graph))
 
+(defn fuse-transducer-nodes [graph from to]
+  (let [f1 (get-in graph [from :xf])
+        f2 (get-in graph [to :xf])
+        new-f (comp f1 f2)
+        _ (assert f1)
+        _ (assert f2)
+        new-node (->GenericTransducerNode from
+                   new-f
+                   (:inputs (graph from))
+                   (:outputs (graph to)))]
+    (-> graph
+      (dissoc to)
+      (assoc from new-node))))
+
+(defn fuse-transducers [graph]
+  (let [xducer (->> (for [[id node] graph
+                          :when (and (instance? GenericTransducerNode node)
+                                  (= 1 (count (:outputs node))))
+                          :let [onodes (graph/nodes-by-link graph :inputs (fnext (first (:outputs node))))]
+                          :when (= (count onodes) 1)
+                          :let [onode (graph (:node (first onodes)))]
+                          :when (instance? GenericTransducerNode onode)
+                          ]
+                      {:from node
+                       :to   onode
+                       })
+                 first)]
+    (if xducer
+
+      (recur (fuse-transducer-nodes graph (:id (:from xducer)) (:id (:to xducer))))
+      graph)))
+
 (defmacro flow [& body]
   `(binding [*graph* {}]
      ~@body
-     (csp/construct-graph (insert-duplicators (non-channel-edges-to-nodes *graph*)))))
+     (csp/construct-graph (fuse-transducers (insert-duplicators (non-channel-edges-to-nodes *graph*))))))
 
 (defmacro graph [& body]
   `(binding [*graph* {}]
      ~@body
-     (insert-duplicators (non-channel-edges-to-nodes *graph*))))
+     (fuse-transducers (insert-duplicators (non-channel-edges-to-nodes *graph*)))))
 
 (comment (let [p (promise)]
            (flow
@@ -165,9 +198,9 @@
 
 
 #_(naiad.backends.graphviz/output-dotfile (let [p (promise)]
-                                             (graph
-                                               (let [v      (take 3 [1 2 3 4])
-                                                     result (map vector (map inc v)
-                                                              (map dec v))]
-                                                 (promise-accumulator p result))))
-  "test.dot")
+                                            (graph
+                                              (let [v      (take 3 [1 2 3 4])
+                                                    result (map vector (map inc v)
+                                                             (map dec v))]
+                                                (promise-accumulator p result))))
+    "test.dot")

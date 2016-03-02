@@ -69,4 +69,9 @@
        :in in})))
 
 
+(defn nodes-by-link [graph type link]
+  (filter #(= (:link %) link)
+    (ports graph type)))
+
+
 (defrecord GraphSource [link-id extra-nodes])

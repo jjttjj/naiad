@@ -65,6 +65,22 @@
            [2 4]))))
 
 
+(deftest transducer-fusing
+  (testing "multiple simple transducers become one"
+    (let [make-graph (fn []
+                       (->> [-1 1 2 3 -33]
+                         (df/filter pos?)
+                         (df/filter even?)
+                         (df/filter integer?)
+                         (df/filter number?)))]
+      (is (= (flow-result
+               (make-graph))
+            [2]))
+
+      (is (= (count (df/graph
+                      (make-graph)))
+            2)))))
+
 #_(deftest channel-data-sources
   (testing "can use a bare channel as a data source"
     (is (= (let [input (async/to-chan [1 2 3])]

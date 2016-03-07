@@ -1,5 +1,5 @@
 (ns naiad.core
-  (:refer-clojure :exclude [map take filter partition-all])
+  (:refer-clojure :exclude [map take filter partition-all merge])
   (:require [clojure.core :as clj]
             [clojure.core.async :as async]
             [naiad.graph :refer [add-node! gen-id id? *graph* ports insert-into-graph IToEdge
@@ -7,7 +7,8 @@
             [naiad.backends.csp :as csp]
             [naiad.nodes :refer :all]
             [naiad.graph :as graph])
-  (:import (naiad.nodes GenericTransducerNode)))
+  (:import (naiad.nodes GenericTransducerNode)
+           (java.util IdentityHashMap)))
 
 
 
@@ -88,18 +89,23 @@
 
 
 (defn non-channel-edges-to-nodes [graph]
-  (reduce
-    (fn [graph [node-id {:keys [inputs] :as node}]]
-      (reduce
-        (fn [graph [input-id input]]
-          (if (id? input)
-            graph
-            (let [{:keys [id graph]} (insert-into-graph input graph)]
-              (assoc-in graph [node-id :inputs input-id] id))))
-        graph
-        inputs))
-    graph
-    graph))
+  (let [seen (IdentityHashMap.)]
+    (reduce
+      (fn [graph [node-id {:keys [inputs] :as node}]]
+        (reduce
+          (fn [graph [input-id input]]
+            (if (id? input)
+              graph
+              (let [{:keys [id graph]} (if (.containsKey seen input)
+                                         {:id (.get seen input)
+                                          :graph graph}
+                                         (insert-into-graph input graph))]
+                (.put seen input id)
+                (assoc-in graph [node-id :inputs input-id] id))))
+          graph
+          inputs))
+      graph
+      graph)))
 
 (defn fuse-transducer-nodes [graph from to]
   (let [f1 (get-in graph [from :xf])
@@ -185,6 +191,14 @@
     out))
 
 
+(defn merge [& ins]
+  (let [out (gen-id)]
+    (add-node!
+      (->Merge (gen-id) (zipmap (range) ins) {:out out}))
+    out))
+
+
+
 
 (defn promise-accumulator [p input]
   (let [id (gen-id)]
@@ -196,6 +210,28 @@
 (def filter (gen-transducer-node clj/filter))
 (def partition-all (gen-transducer-node clj/partition-all))
 
+(defn distribute [in]
+  (let [node-id (gen-id)]
+    (add-node! (->Distribute node-id {:in in} {}))
+    (clj/map
+      (fn [idx]
+        (let [id (gen-id)]
+          (set! *graph* (assoc-in *graph* [node-id :outputs idx] id))
+          id))
+      (range))))
+
+
+
+(defn parallel* [{:keys [threads]} f in]
+  (let [outs (mapv f
+               (clj/take threads (distribute in)))]
+    (apply merge outs)))
+
+(defmacro parallel->> [opts & body]
+  `(parallel* ~opts
+     (fn [in#]
+       (->> in# ~@(butlast body)))
+     ~(last body)))
 
 #_(naiad.backends.graphviz/output-dotfile (let [p (promise)]
                                             (graph
@@ -204,3 +240,16 @@
                                                              (map dec v))]
                                                 (promise-accumulator p result))))
     "test.dot")
+
+
+(comment
+
+  (->> foo
+       (map inc)
+       (parallel-> {:threads 3}
+         (map dec)
+         (filter pos?))
+       (take 3)
+        )
+
+  )

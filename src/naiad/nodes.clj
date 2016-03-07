@@ -121,3 +121,28 @@
               (doseq [c outs]
                 (close! c))))))))
 
+
+(defrecord Merge [id inputs outputs]
+  INode
+
+  csp/ICSPNode
+  (construct! [this]
+    (let [ins (vals inputs)
+          out (:out outputs)]
+      (go (loop [ins ins]
+            (when (pos? (count ins))
+              (let [[v c] (async/alts! ins)]
+                (if v
+                  (if (>! out v)
+                    (recur ins)
+                    (do (doseq [in ins]
+                          (close! ins))))
+                  (do (close! c)
+                      (recur (remove (partial = c) ins)))))))
+          (close! out)))))
+
+
+(defrecord Distribute [id inputs outputs]
+  csp/ICSPNode
+  (construct! [this]
+    (assert false "Distribute is not a creatable node")))

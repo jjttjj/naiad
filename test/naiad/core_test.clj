@@ -89,22 +89,25 @@
           #{1 2 3 4 5 6}))))
 
 
-(deftest parallel->-tests
+(deftest parallel->>-tests
   (testing "basic parallel usage"
     (is (= (set (flow-result
                   (->> [1 2 3 4 5 6 7]
                     (df/parallel->> {:threads 3}
                       (df/map inc))
                     (df/take 7))))
-          #{1 2 3 4 5 6 7}))))
+          #{2 3 4 5 6 7 8}))))
 
 
+#_(defn debug [x]
+  (clojure.pprint/pprint x)
+  x)
 
-(naiad.backends.graphviz/output-dotfile (df/graph
-                                          (->> [1 2 3 4 5 6 7]
-                                            (df/parallel->> {:threads 8}
-                                              (df/map inc))
-                                            (df/take 7)))
+#_(naiad.backends.graphviz/output-dotfile (debug (df/graph
+                                                 (->> [1 2 3 4 5 6 7]
+                                                   (df/parallel->> {:threads 8}
+                                                     (df/map inc))
+                                                   (df/take 7))))
   "test.dot")
 #_(deftest channel-data-sources
     (testing "can use a bare channel as a data source"

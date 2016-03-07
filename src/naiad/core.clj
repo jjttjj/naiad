@@ -97,7 +97,7 @@
             (if (id? input)
               graph
               (let [{:keys [id graph]} (if (.containsKey seen input)
-                                         {:id (.get seen input)
+                                         {:id    (.get seen input)
                                           :graph graph}
                                          (insert-into-graph input graph))]
                 (.put seen input id)
@@ -108,11 +108,11 @@
       graph)))
 
 (defn fuse-transducer-nodes [graph from to]
-  (let [f1 (get-in graph [from :xf])
-        f2 (get-in graph [to :xf])
-        new-f (comp f1 f2)
-        _ (assert f1)
-        _ (assert f2)
+  (let [f1       (get-in graph [from :xf])
+        f2       (get-in graph [to :xf])
+        new-f    (comp f1 f2)
+        _        (assert f1)
+        _        (assert f2)
         new-node (->GenericTransducerNode from
                    new-f
                    (:inputs (graph from))
@@ -139,15 +139,34 @@
       (recur (fuse-transducer-nodes graph (:id (:from xducer)) (:id (:to xducer))))
       graph)))
 
+(defn remove-distributes [graph]
+  (let [id-maps (atom {})
+        graph   (reduce-kv
+                  (fn [acc id node]
+                    (if (instance? naiad.nodes.Distribute node)
+                      (do (apply swap! id-maps assoc (interleave
+                                                       (vals (:outputs node))
+                                                       (repeat (:in (:inputs node)))))
+                          acc)
+                      (assoc acc id node)))
+                  {}
+                  graph)]
+    (reduce
+      (fn [graph {:keys [node link port]}]
+        (assoc-in graph [node :inputs port] (@id-maps link)))
+      graph
+      (->> (graph/ports graph :inputs)
+        (clj/filter (comp @id-maps :link))))))
+
 (defmacro flow [& body]
   `(binding [*graph* {}]
      ~@body
-     (csp/construct-graph (fuse-transducers (insert-duplicators (non-channel-edges-to-nodes *graph*))))))
+     (csp/construct-graph (remove-distributes (fuse-transducers (insert-duplicators (non-channel-edges-to-nodes *graph*)))))))
 
 (defmacro graph [& body]
   `(binding [*graph* {}]
      ~@body
-     (fuse-transducers (insert-duplicators (non-channel-edges-to-nodes *graph*)))))
+     (remove-distributes (fuse-transducers (insert-duplicators (non-channel-edges-to-nodes *graph*))))))
 
 (comment (let [p (promise)]
            (flow
@@ -222,6 +241,7 @@
 
 
 
+
 (defn parallel* [{:keys [threads]} f in]
   (let [outs (mapv f
                (clj/take threads (distribute in)))]
@@ -245,11 +265,11 @@
 (comment
 
   (->> foo
-       (map inc)
-       (parallel-> {:threads 3}
-         (map dec)
-         (filter pos?))
-       (take 3)
-        )
+    (map inc)
+    (parallel-> {:threads 3}
+      (map dec)
+      (filter pos?))
+    (take 3)
+    )
 
   )

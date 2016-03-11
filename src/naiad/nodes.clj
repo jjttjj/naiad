@@ -1,7 +1,7 @@
 (ns naiad.nodes
   (:require [clojure.core :as clj]
             [naiad.graph :refer [add-node! gen-id id? *graph* ports insert-into-graph IToEdge
-                                    INode]]
+                                 INode]]
             [naiad.backends.csp :as csp]
             [clojure.core.async :refer [go <! >! close!] :as async]))
 
@@ -28,8 +28,8 @@
 
 (defmacro gen-transducer-node [f]
   `(fn ~f [& args#]
-     (let [fargs# (butlast args#)
-           input# (last args#)
+     (let [fargs#  (butlast args#)
+           input#  (last args#)
            output# (gen-id)]
        (add-node!
          {:type        :generic-transducer
@@ -38,6 +38,24 @@
           :inputs      {:in input#}
           :outputs     {:out output#}})
        output#)))
+
+(defmacro gen-verbose-transducer-node [f arg-names]
+  (let [fname (symbol (str (name f) "-node"))]
+    `(let [extractor# (apply juxt ~arg-names)]
+       (fn ~fname
+         ([first# & rargs#]
+           (~fname (apply hash-map first# rargs#)))
+         ([args#]
+           (let [fargs#  (extractor# args#)
+                 input#  (or (:in args#) (gen-id))
+                 output# (or (:out args#) (gen-id))]
+             (add-node!
+               {:type        :generic-transducer
+                :f           (apply ~f fargs#)
+                :transducer? true
+                :inputs      {:in input#}
+                :outputs     {:out output#}})
+             output#))))))
 
 
 
@@ -58,7 +76,7 @@
 
 (defmethod csp/construct! :naiad/duplicate
   [{:keys [inputs outputs]}]
-  (let [in (:in inputs)
+  (let [in   (:in inputs)
         outs (vec (vals outputs))]
     (go (loop []
           (if-some [v (<! in)]

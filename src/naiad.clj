@@ -76,6 +76,15 @@
        :graph (add-node graph {:type ::onto-chan
                                :id id
                                :coll this
+                               :outputs {:out id}})}))
+
+  clojure.lang.ISeq
+  (insert-into-graph [this graph]
+    (let [id (gen-id)]
+      {:id    id
+       :graph (add-node graph {:type ::onto-chan
+                               :id id
+                               :coll this
                                :outputs {:out id}})})))
 
 
@@ -150,7 +159,9 @@
       (->> (graph/ports graph :inputs)
         (clj/filter (comp @id-maps :link))))))
 
-(defmacro flow [& body]
+(defmacro flow
+  "Creates a graph and executes it using standard optimizations."
+  [& body]
   `(binding [*graph* {}]
      ~@body
      (csp/construct-graph (remove-distributes (fuse-transducers (insert-duplicators (non-channel-edges-to-nodes *graph*)))))))
@@ -223,7 +234,33 @@
   nil)
 
 
-(def take (gen-transducer-node clj/take))
+(def ^{:doc "Creates a node that will take the first X items from the input port before closing both the
+             input and output ports.
+
+             Usage:
+             (take n input)
+             n     - The number of items to take from input
+             input - Input node to take n items from
+
+             Returns:
+             A link that will receive n items taken from input"}
+  take
+  (gen-transducer-node clj/take))
+
+(def ^{:doc "Creates a node that will take the first X items from the input port before closing both the
+             input and output ports.
+
+             Usage:
+             (take :n x :in input :out output)
+             n      - (required) The number of items to take from in
+             input  - (required) Input node to take n items from
+             output - output node to put items taken form in
+
+             Returns:
+             :out, will construct a link if one is not given"}
+  ->take
+  (gen-verbose-transducer-node clojure.core/take [:n]))
+
 (def filter (gen-transducer-node clj/filter))
 (def partition-all (gen-transducer-node clj/partition-all))
 

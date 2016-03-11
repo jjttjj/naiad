@@ -54,7 +54,12 @@
   (testing "take"
     (is (= (flow-result
              (df/take 3 (df/filter even? [1 2 3 4 5 6 7 8])))
-          [2 4 6])))
+          [2 4 6]))
+
+    (testing "constructor form"
+      (is (= (flow-result
+               (df/->take :n 3 :in (df/filter even? (range 8)))))
+        [2 3 4])))
 
   (testing "partition"
     (is (= (flow-result

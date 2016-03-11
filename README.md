@@ -12,12 +12,12 @@ and then let Naiad work out how to wire it all up.
 
 ### Tenets
 The goals of Naiad are as follows:
-1) Represent dataflow graphs as data, that can be manipulated via post-processing optimizers
-2) Provide a fluent API that works well with threading macros: `(-> (range 3) (take 2) (map inc))`
-3) Provide a keyword argument API that works well when needing to connect graphs `(-> (range 3) (take 2 :out o :in))`
-4) Provide a map based API that works well with programatic data transformers `(->take {:in (range 3) :n 2 :out o})`
-5) Do *not* introduce a large number of new macros. Should prefer functions over DSLs
-6) Performance hints (such as parallel pipelining) should not require restructuring of code, it should be as simple as
+* Represent dataflow graphs as data, that can be manipulated via post-processing optimizers
+* Provide a fluent API that works well with threading macros: `(-> (range 3) (take 2) (map inc))`
+* Provide a keyword argument API that works well when needing to connect graphs `(-> (range 3) (take 2 :out o :in))`
+* Provide a map based API that works well with programatic data transformers `(->take {:in (range 3) :n 2 :out o})`
+* Do *not* introduce a large number of new macros. Should prefer functions over DSLs
+* Performance hints (such as parallel pipelining) should not require restructuring of code, it should be as simple as
 wrapping a block of code in a macro or function call.
 
 

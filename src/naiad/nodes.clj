@@ -6,74 +6,37 @@
             [clojure.core.async :refer [go <! >! close!] :as async]))
 
 
-(defrecord Map [f inputs outputs]
-  INode
-  (transducer? [this]
-    (= (count inputs) 1))
-  (as-transducer [this]
-    (clj/map f))
-  (validate [this]
-    (assert (= (set (keys inputs)) (set (range (count inputs))))
-            "Inputs to map must be intengers in the range of 0+")
-    (assert (ifn? f) "Function input to map must be a IFn")
-    (assert (= (set (keys outputs))
-               #{:out}) "The output of map must be named :out"))
-  csp/ICSPNode
-  (construct! [this]
-    (go
-      (let [out (:out outputs)]
-        (loop [acc []]
-          (if (< (count acc) (count inputs))
-            (if-let [v (<! (inputs (count acc)))]
-              (recur (conj acc v))
-              (do (close! out)
-                  (doseq [[k v] inputs]
-                    (close! v))))
-            (if (>! out (apply f acc))
-              (recur [])
-              (doseq [[_ v] inputs]
-                (close! v)))))))))
+(defmethod csp/construct! :naiad/map
+  [{:keys [inputs outputs f]}]
+  (go
+    (let [out (:out outputs)]
+      (loop [acc []]
+        (if (< (count acc) (count inputs))
+          (if-let [v (<! (inputs (count acc)))]
+            (recur (conj acc v))
+            (do (close! out)
+                (doseq [[k v] inputs]
+                  (close! v))))
+          (if (>! out (apply f acc))
+            (recur [])
+            (doseq [[_ v] inputs]
+              (close! v))))))))
 
 
-(defn xf-pipe [to xf from]
-  (go (let [a (volatile! [])
-            rf (xf (fn [_ v]
-                     (vswap! a conj v)))]
-        (loop []
-          (if-some [v (<! from)]
-            (let [_ (rf nil v)
-                  exit? (loop [[h & t] @a]
-                          (when h
-                            (if (>! to h)
-                              (recur t)
-                              :exit)))]
-              (if exit?
-                (close! to)
-                (do (vreset! a [])
-                    (recur))))
 
-            (let [_ (xf nil)]
-              (doseq [v @a]
-                (>! to v))
-              (close! to)))))))
 
-(defrecord GenericTransducerNode [id xf inputs outputs]
-  INode
-  (transducer? [this]
-    true)
-  csp/ICSPNode
-  (construct! [this]
-    (xf-pipe (:out outputs) xf (:in inputs))))
 
 (defmacro gen-transducer-node [f]
   `(fn ~f [& args#]
      (let [fargs# (butlast args#)
            input# (last args#)
            output# (gen-id)]
-       (add-node! (->GenericTransducerNode (gen-id)
-                                           (apply ~f fargs#)
-                                           {:in input#}
-                                           {:out output#}))
+       (add-node!
+         {:type        :generic-transducer
+          :f           (apply ~f fargs#)
+          :transducer? true
+          :inputs      {:in input#}
+          :outputs     {:out output#}})
        output#)))
 
 
@@ -86,63 +49,46 @@
 
 
 
-(defrecord PromiseAccumulator [id p inputs]
-  csp/ICSPNode
-  (construct! [this]
-    (async/take! (async/into [] (:in inputs))
-                 (partial deliver p))))
+
+(defmethod csp/construct! :naiad/promise-accumulator
+  [{:keys [inputs promise]}]
+  (async/take! (async/into [] (:in inputs))
+    (partial deliver promise)))
 
 
+(defmethod csp/construct! :naiad/duplicate
+  [{:keys [inputs outputs]}]
+  (let [in (:in inputs)
+        outs (vec (vals outputs))]
+    (go (loop []
+          (if-some [v (<! in)]
+            (let [exit? (loop [remain (set (map #(vector % v) outs))]
+                          (when (> (count remain) 0)
+                            (let [[ret c] (async/alts! (vec remain))]
+                              (if ret
+                                (recur (disj remain [c v]))
+                                (do (doseq [c outs]
+                                      (close! c))
+                                    (close! in)
+                                    :exit)))))]
+              (when-not exit?
+                (recur)))
+            (doseq [c outs]
+              (close! c)))))))
 
-(defrecord Duplicate [id inputs outputs]
-  INode
-  (transducer? [this] false)
-  (validate [this]
-    (assert (= (keys inputs) [:in]) "Duplicate takes only one input")
-    (assert (> (count outputs) 0) "Must have at least one output"))
+(defmethod csp/construct! :naiad/merge
+  [{:keys [inputs outputs]}]
+  (let [ins (vals inputs)
+        out (:out outputs)]
+    (go (loop [ins ins]
+          (when (pos? (count ins))
+            (let [[v c] (async/alts! ins)]
+              (if v
+                (if (>! out v)
+                  (recur ins)
+                  (do (doseq [in ins]
+                        (close! ins))))
+                (do (close! c)
+                    (recur (remove (partial = c) ins)))))))
+        (close! out))))
 
-  csp/ICSPNode
-  (construct! [this]
-    (let [in (:in inputs)
-          outs (vec (vals outputs))]
-      (go (loop []
-            (if-some [v (<! in)]
-              (let [exit? (loop [remain (set (map #(vector % v) outs))]
-                            (when (> (count remain) 0)
-                              (let [[ret c] (async/alts! (vec remain))]
-                                (if ret
-                                  (recur (disj remain [c v]))
-                                  (do (doseq [c outs]
-                                        (close! c))
-                                      (close! in)
-                                      :exit)))))]
-                (when-not exit?
-                  (recur)))
-              (doseq [c outs]
-                (close! c))))))))
-
-
-(defrecord Merge [id inputs outputs]
-  INode
-
-  csp/ICSPNode
-  (construct! [this]
-    (let [ins (vals inputs)
-          out (:out outputs)]
-      (go (loop [ins ins]
-            (when (pos? (count ins))
-              (let [[v c] (async/alts! ins)]
-                (if v
-                  (if (>! out v)
-                    (recur ins)
-                    (do (doseq [in ins]
-                          (close! ins))))
-                  (do (close! c)
-                      (recur (remove (partial = c) ins)))))))
-          (close! out)))))
-
-
-(defrecord Distribute [id inputs outputs]
-  csp/ICSPNode
-  (construct! [this]
-    (assert false "Distribute is not a creatable node")))

@@ -32,8 +32,13 @@
 
 (gen-id)
 
-(defn add-node! [{:keys [id] :as node}]
-  (set! *graph* (assoc *graph* id node)))
+(defn add-node [graph {:keys [id type] :as node}]
+  (assert type (str "Node"  node " must have a type"))
+  (let [id (or id (gen-id))]
+    (assoc graph id (assoc node :id id))))
+
+(defn add-node! [node]
+  (set! *graph* (add-node *graph* node)))
 
 
 (defn ports [graph type]

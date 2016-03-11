@@ -1,11 +1,39 @@
 (ns naiad.backends.csp
-  (:require [clojure.core.async :as async]
+  (:require [clojure.core.async :as async :refer [close! <! >! go]]
             [naiad.graph :refer [links]]))
 
 
-(defprotocol ICSPNode
-  (construct! [this]))
+(defmulti construct! :type)
 
+(defn xf-pipe [to xf from]
+  (go (let [a (volatile! [])
+            rf (xf (fn [_ v]
+                     (vswap! a conj v)))]
+        (loop []
+          (if-some [v (<! from)]
+            (let [_ (rf nil v)
+                  exit? (loop [[h & t] @a]
+                          (when h
+                            (if (>! to h)
+                              (recur t)
+                              :exit)))]
+              (if exit?
+                (close! to)
+                (do (vreset! a [])
+                    (recur))))
+
+            (let [_ (xf nil)]
+              (doseq [v @a]
+                (>! to v))
+              (close! to)))))))
+
+(defmethod construct! :default
+  [{:keys [transducer? inputs outputs f] :as node}]
+  (assert (and transducer?
+            (= (count inputs) 1)
+            (= (count outputs) 1))
+    (str "Cannot construct node: " node))
+  (xf-pipe (:out outputs) f (:in inputs)))
 
 (defn inject-channels [mappings mp]
   (reduce-kv
@@ -15,6 +43,7 @@
         (assoc acc k c)))
     mp
     mp))
+
 
 
 (defn construct-graph [graph]

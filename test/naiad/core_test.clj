@@ -1,13 +1,21 @@
 (ns naiad.core-test
   (:require [clojure.test :refer :all]
             [clojure.core.async :as async]
-            [naiad.core :as df]))
+            [naiad :as df]))
 
 (defmacro flow-result [& expr]
   `(let [p# (promise)]
      (df/flow
        (df/promise-accumulator p# (do ~@expr)))
      @p#))
+
+(df/graph
+  (df/map inc (df/map dec (df/map #(+ % %) [1 2 3]))))
+
+(df/graph
+  (let [data [1 2 3]]
+    (flow-result
+      (df/filter even? [1 2 3 4]))))
 
 (deftest map-tests
   (testing "basic map usage"
@@ -36,6 +44,7 @@
                  (df/map inc data))))
           [2 4 6]))))
 
+
 (deftest basic-tansducer-tests
   (testing "filter"
     (is (= (flow-result
@@ -54,7 +63,6 @@
 
     ))
 
-
 (deftest multi-use-channels
   (testing "data distribution"
     (is (= (flow-result
@@ -63,7 +71,6 @@
                  (df/map inc filtered)
                  (df/map dec filtered))))
           [2 4]))))
-
 
 (deftest transducer-fusing
   (testing "multiple simple transducers become one"
@@ -81,7 +88,6 @@
                       (make-graph)))
             2)))))
 
-
 (deftest merge-tests
   (testing "basic merge usage"
     (is (= (set (flow-result
@@ -97,6 +103,21 @@
                       (df/map inc))
                     (df/take 7))))
           #{2 3 4 5 6 7 8}))))
+
+#_(comment
+
+
+
+
+
+
+
+
+
+
+
+
+    )
 
 
 #_(defn debug [x]

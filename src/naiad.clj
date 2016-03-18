@@ -3,7 +3,7 @@
   (:require [clojure.core :as clj]
             [clojure.core.async :as async]
             [naiad.graph :refer [add-node! add-node gen-id id? *graph* ports insert-into-graph IToEdge
-                                 INode ->GraphSource]]
+                                 INode ->GraphSource annotate-link]]
             [naiad.backends.csp :as csp]
             [naiad.nodes :refer :all]
             [naiad.graph :as graph])
@@ -78,6 +78,19 @@
                                :coll this
                                :outputs {:out id}})}))
 
+
+  clojure.core.async.impl.protocols.ReadPort
+  (insert-into-graph [this graph]
+    (let [id (gen-id)]
+      {:id id
+       :graph (annotate-link graph id {:existing-channel this})}))
+
+  clojure.core.async.impl.protocols.WritePort
+  (insert-into-graph [this graph]
+    (let [id (gen-id)]
+      {:id id
+       :graph (annotate-link graph id {:existing-channel this})}))
+
   clojure.lang.ISeq
   (insert-into-graph [this graph]
     (let [id (gen-id)]
@@ -89,23 +102,26 @@
 
 
 (defn non-channel-edges-to-nodes [graph]
-  (let [seen (IdentityHashMap.)]
-    (reduce
-      (fn [graph [node-id {:keys [inputs] :as node}]]
-        (reduce
-          (fn [graph [input-id input]]
-            (if (id? input)
-              graph
-              (let [{:keys [id graph]} (if (.containsKey seen input)
-                                         {:id    (.get seen input)
-                                          :graph graph}
-                                         (insert-into-graph input graph))]
-                (.put seen input id)
-                (assoc-in graph [node-id :inputs input-id] id))))
-          graph
-          inputs))
-      graph
-      graph)))
+  (let [seen (IdentityHashMap.)
+        update-fn
+             (fn [graph port-key]
+               (reduce
+                 (fn [graph [node-id node]]
+                   (reduce
+                     (fn [graph [port-id port]]
+                       (if (id? port)
+                         graph
+                         (let [{:keys [id graph]} (if (.containsKey seen port)
+                                                    {:id    (.get seen port)
+                                                     :graph graph}
+                                                    (insert-into-graph port graph))]
+                           (.put seen port id)
+                           (assoc-in graph [node-id port-key port-id] id))))
+                     graph
+                     (port-key node)))
+                 graph
+                 graph))]
+    (reduce update-fn graph [:inputs :outputs :closes])))
 
 (defn fuse-transducer-nodes [graph from to]
   (let [f1       (get-in graph [from :f])

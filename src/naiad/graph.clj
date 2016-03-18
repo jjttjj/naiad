@@ -37,6 +37,10 @@
   (let [id (or id (gen-id))]
     (assoc graph id (assoc node :id id))))
 
+(defn annotate-link [graph id data]
+  (update-in graph [id] merge {:type :naiad/link-annotation
+                               :id id} data))
+
 (defn add-node! [node]
   (set! *graph* (add-node *graph* node)))
 

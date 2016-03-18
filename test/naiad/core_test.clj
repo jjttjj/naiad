@@ -109,25 +109,22 @@
                     (df/take 7))))
           #{2 3 4 5 6 7 8}))))
 
-#_(comment
 
+(deftest channel-data-sources
+  (testing "can use a bare channel as a data source"
+    (is (= (let [input (async/to-chan [1 2 3])]
+             (flow-result
+               (df/map inc input)))
+          [2 3 4])))
 
+  (testing "can use a bare channel as a data sink"
+    (is (= (let [output (async/chan 3)]
+             (df/flow
+               (df/->take :n 1 :in (range 10) :out output))
+             [(async/<!! output)
+              (async/<!! output)])
+          [0 nil]))))
 
-
-
-
-
-
-
-
-
-
-    )
-
-
-#_(defn debug [x]
-  (clojure.pprint/pprint x)
-  x)
 
 #_(naiad.backends.graphviz/output-dotfile (debug (df/graph
                                                  (->> [1 2 3 4 5 6 7]
@@ -135,9 +132,3 @@
                                                      (df/map inc))
                                                    (df/take 7))))
   "test.dot")
-#_(deftest channel-data-sources
-    (testing "can use a bare channel as a data source"
-      (is (= (let [input (async/to-chan [1 2 3])]
-               (flow-result
-                 (map inc input)))
-            [2 3 4]))))

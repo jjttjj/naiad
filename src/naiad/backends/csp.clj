@@ -44,19 +44,30 @@
     mp
     mp))
 
+(defn construct-channel [{:keys [existing-channel]}]
+  (cond
+    existing-channel existing-channel
+    :else (async/chan)))
+
 
 
 (defn construct-graph [graph]
   (let [link-ids (links graph)
-        chans (zipmap link-ids (repeatedly async/chan))]
+        chans (zipmap link-ids
+                (->> link-ids
+                  ;; Get any options for the links
+                  (map graph)
+                  (map construct-channel)))]
     (reduce-kv
-      (fn [acc k node]
-        (let [{:keys [inputs outputs closes]} node
-              new-node (assoc node
-                         :inputs (inject-channels chans inputs)
-                         :outputs (inject-channels chans outputs)
-                         :closes (inject-channels chans closes))]
-          (construct! new-node)
-          (assoc acc k new-node)))
+      (fn [acc k {:keys [type] :as node}]
+        (if (= type :naiad/link-annotation)
+          (assoc acc k node)
+          (let [{:keys [inputs outputs closes]} node
+                new-node (assoc node
+                           :inputs (inject-channels chans inputs)
+                           :outputs (inject-channels chans outputs)
+                           :closes (inject-channels chans closes))]
+            (construct! new-node)
+            (assoc acc k new-node))))
       graph
       graph)))

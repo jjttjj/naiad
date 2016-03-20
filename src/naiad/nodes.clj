@@ -110,3 +110,24 @@
                     (recur (remove (partial = c) ins)))))))
         (close! out))))
 
+
+(defmethod csp/construct! :naiad/subscribe
+  [{:keys [topic-fn inputs outputs default-key default-c]}]
+  (let [default-c (or (and default-key (default-key outputs))
+                    default-c)
+        in-c      (:in inputs)]
+    (go
+      (loop []
+        (if-some [v (<! in-c)]
+          (let [topic (topic-fn v)
+                out-c (or (outputs topic)
+                        default-c)]
+            (if out-c
+              (if (>! out-c v)
+                (recur)
+                (do (close! in-c)
+                    (doseq [[k v] outputs]
+                      (close! v))))
+              (recur)))
+          (do (doseq [[k v] outputs]
+                (close! v))))))))

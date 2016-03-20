@@ -44,6 +44,13 @@
 (defn add-node! [node]
   (set! *graph* (add-node *graph* node)))
 
+(defn add-port! [node-id klass name]
+  (if-let [port (get-in *graph* [node-id klass name])]
+    port
+    (let [id (gen-id)]
+      (set! *graph* (assoc-in *graph* [node-id klass name] id))
+      id)))
+
 
 (defn ports [graph type]
   (assert #{:inputs :outputs} type)

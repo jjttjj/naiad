@@ -126,9 +126,23 @@
           [0 nil]))))
 
 
-#_(naiad.backends.graphviz/output-dotfile (debug (df/graph
-                                                 (->> [1 2 3 4 5 6 7]
-                                                   (df/parallel->> {:threads 8}
-                                                     (df/map inc))
-                                                   (df/take 7))))
+(deftest subscribe-test
+  (df/graph
+    (let [result (df/subscribe :something [1 2 3 4])]
+      (is (= (:foo result) (:foo result)))
+      (is (not= (:foo result) (:bar result))))
+
+    (let [{:keys [foo bar] :as r} (df/subscribe identity [:foo :bar])]
+      (is (not= foo bar))
+      (is (= foo (:foo r)))))
+
+  (is (= (set (flow-result
+                (let [{evens true odds false} (df/subscribe even? (range 10))]
+                  (df/merge evens odds))))
+        (set (range 10)))))
+
+#_(naiad.backends.graphviz/output-dotfile (df/graph
+                                          (let [{evens true odds false} (df/subscribe even? (range 10))]
+                                            (df/merge evens odds))
+                                          )
   "test.dot")

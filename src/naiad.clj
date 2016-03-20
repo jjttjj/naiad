@@ -3,7 +3,7 @@
   (:require [clojure.core :as clj]
             [clojure.core.async :as async]
             [naiad.graph :refer [add-node! add-node gen-id id? *graph* ports insert-into-graph IToEdge
-                                 INode ->GraphSource annotate-link]]
+                                 INode ->GraphSource annotate-link add-port!]]
             [naiad.backends.csp :as csp]
             [naiad.nodes :refer :all]
             [naiad.graph :as graph])
@@ -292,6 +292,21 @@
           (set! *graph* (assoc-in *graph* [node-id :outputs idx] id))
           id))
       (range))))
+
+
+(defn subscribe [topic-fn in]
+  (let [node-id (gen-id)]
+    (add-node! {:type ::subscribe
+               :topic-fn topic-fn
+               :id node-id
+               :inputs {:in in}
+               :outputs {}})
+    (reify
+      clojure.lang.ILookup
+      (valAt [this val]
+        (add-port! node-id :outputs val))
+      (valAt [this val _]
+        (.valAt this val)))))
 
 
 

@@ -9,10 +9,19 @@
         (println "digraph G {")
         (doseq [{:keys [link in out]} edges]
           (println (pr-str (str (:node in))) "->" (pr-str (str (:node out)))
-                   "[ headlabel= " (pr-str (str (:port out)))
-                   "taillabel=" (pr-str (str (:port in))) "];"))
+            "[ headlabel= " (pr-str (str (:port out)))
+            "taillabel=" (pr-str (str (:port in))) "];"))
         (doseq [[id node] graph]
-          (println (pr-str (str id)) "[label= " (pr-str (str node)) "]"))
+          (let [without-meta (dissoc node :inputs :outputs :closes :id :type)]
+            (print (pr-str (str id)) "[label= ")
+
+            (print (pr-str (apply str (:type node) \newline
+                             (interpose \newline (map
+                                                   (fn [[k v]]
+                                                     (str k " = " v))
+                                                   without-meta)))))
+
+            (println "]")))
         (println "}"))))
 
   )

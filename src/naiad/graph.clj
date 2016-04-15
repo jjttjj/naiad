@@ -44,7 +44,7 @@
 (defn add-node [graph {:keys [id type] :as node}]
   (assert type (str "Node"  node " must have a type"))
   (let [id (or id (gen-id))]
-    (assoc graph id (assoc node :id id))))
+    (assoc graph id (assoc (merge *default-annotations* node) :id id))))
 
 
 

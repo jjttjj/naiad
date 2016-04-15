@@ -137,3 +137,10 @@
               (recur)))
           (do (doseq [[k v] outputs]
                 (close! v))))))))
+
+
+
+
+(defmethod csp/construct! :naiad/onto-chan
+  [{:keys [outputs coll]}]
+  (clojure.core.async/onto-chan (:out outputs) coll true))

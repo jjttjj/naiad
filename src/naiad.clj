@@ -48,11 +48,6 @@
 
 
 
-(defmethod csp/construct! ::onto-chan
-  [{:keys [outputs coll]}]
-  (clojure.core.async/onto-chan (:out outputs) coll true))
-
-
 
 
 
@@ -206,8 +201,8 @@
 
 (defmacro flow-result [& expr]
   `(let [p# (promise)]
-     (df/flow
-       (df/promise-accumulator p# (do ~@expr)))
+     (flow
+       (promise-accumulator p# (do ~@expr)))
      @p#))
 
 

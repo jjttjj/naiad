@@ -1,6 +1,8 @@
 (ns naiad.backends.csp
   (:require [clojure.core.async :as async :refer [close! <! >! go]]
-            [naiad.graph :refer [links]]))
+            [clojure.core.async.impl.protocols :as aproto]
+            [naiad.graph :refer [links]]
+            [naiad.metrics :as metrics]))
 
 
 (defmulti construct! :type)
@@ -44,10 +46,32 @@
     mp
     mp))
 
-(defn construct-channel [{:keys [existing-channel]}]
+(deftype MetricsWrappedBuffer [b m]
+  aproto/Buffer
+  (full? [this]
+    (aproto/full? b))
+  (remove! [this]
+    (when-some [v (aproto/remove! b)]
+      (metrics/histogram m :buffer-size (count b))
+      v))
+  (add!* [this v]
+    (aproto/add!* b v)
+    (metrics/histogram m :buffer-size (count b)))
+  (close-buf! [this]
+    (aproto/close-buf! b))
+  clojure.lang.Counted
+  (count [this]
+    (count b)))
+
+
+(defn construct-channel [{:keys [existing-channel metrics buffer]}]
   (cond
     existing-channel existing-channel
-    :else (async/chan)))
+    :else (let [b (or buffer (async/buffer 1))
+                b (if metrics
+                    (->MetricsWrappedBuffer b metrics)
+                    b)]
+            (async/chan b))))
 
 
 

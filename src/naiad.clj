@@ -2,13 +2,20 @@
   (:refer-clojure :exclude [map take filter partition-all merge])
   (:require [clojure.core :as clj]
             [clojure.core.async :as async]
-            [naiad.graph :refer [add-node! add-node gen-id id? *graph* ports insert-into-graph IToEdge
-                                 INode ->GraphSource annotate-link add-port!]]
+            [naiad.graph :refer [add-node! add-node gen-id id? *graph* ports
+                                 INode ->GraphSource annotate-link add-port! annotate-link!]
+                         :as graph]
             [naiad.backends.csp :as csp]
             [naiad.nodes :refer :all]
-            [naiad.graph :as graph])
-  (:import (java.util IdentityHashMap)))
+            [naiad.graph :as graph]
+            [naiad.metrics]
+            [naiad.passes :as passes]))
 
+(def ^:dynamic *io* false)
+
+(defmacro with-annotations [ann & body]
+  `(binding [graph/*default-annotations* ~ann]
+     ~@body))
 
 
 
@@ -39,153 +46,28 @@
   )
 
 
-(defn insert-duplicators [graph]
-  (let [links     (->> (ports graph :inputs)
-                    (group-by :link)
-                    (clj/filter (fn [[k v]]
-                                  (> (count v) 1))))
-        new-nodes (for [[link inputs] links
-                        :let [new-ids (repeatedly (count inputs) gen-id)]]
-                    {:node  {:type    ::duplicate
-                             :id      (gen-id)
-                             :inputs  {:in link}
-                             :outputs (zipmap (range) new-ids)}
-                     :links (zipmap new-ids
-                              inputs)})
-        graph     (reduce
-                    (fn [acc {:keys [node links]}]
-                      (let [acc (assoc acc (:id node) node)]
-                        (reduce
-                          (fn [acc [new-id {:keys [node port link]}]]
-                            (assoc-in acc [node :inputs port] new-id))
-                          acc
-                          links)))
-                    graph
-                    new-nodes)]
-    graph))
+
 
 (defmethod csp/construct! ::onto-chan
   [{:keys [outputs coll]}]
   (clojure.core.async/onto-chan (:out outputs) coll true))
 
-(extend-protocol IToEdge
-  clojure.lang.PersistentVector
-  (insert-into-graph [this graph]
-    (let [id (gen-id)]
-      {:id    id
-       :graph (add-node graph {:type ::onto-chan
-                               :id id
-                               :coll this
-                               :outputs {:out id}})}))
 
 
-  clojure.core.async.impl.protocols.ReadPort
-  (insert-into-graph [this graph]
-    (let [id (gen-id)]
-      {:id id
-       :graph (annotate-link graph id {:existing-channel this})}))
-
-  clojure.core.async.impl.protocols.WritePort
-  (insert-into-graph [this graph]
-    (let [id (gen-id)]
-      {:id id
-       :graph (annotate-link graph id {:existing-channel this})}))
-
-  clojure.lang.ISeq
-  (insert-into-graph [this graph]
-    (let [id (gen-id)]
-      {:id    id
-       :graph (add-node graph {:type ::onto-chan
-                               :id id
-                               :coll this
-                               :outputs {:out id}})})))
 
 
-(defn non-channel-edges-to-nodes [graph]
-  (let [seen (IdentityHashMap.)
-        update-fn
-             (fn [graph port-key]
-               (reduce
-                 (fn [graph [node-id node]]
-                   (reduce
-                     (fn [graph [port-id port]]
-                       (if (id? port)
-                         graph
-                         (let [{:keys [id graph]} (if (.containsKey seen port)
-                                                    {:id    (.get seen port)
-                                                     :graph graph}
-                                                    (insert-into-graph port graph))]
-                           (.put seen port id)
-                           (assoc-in graph [node-id port-key port-id] id))))
-                     graph
-                     (port-key node)))
-                 graph
-                 graph))]
-    (reduce update-fn graph [:inputs :outputs :closes])))
-
-(defn fuse-transducer-nodes [graph from to]
-  (let [f1       (get-in graph [from :f])
-        f2       (get-in graph [to :f])
-        new-f    (comp f1 f2)
-        _        (assert f1)
-        _        (assert f2)
-        new-node {:type        ::fused-transducer
-                  :id          from
-                  :transducer? true
-                  :f           new-f
-                  :inputs      (:inputs (graph from))
-                  :outputs     (:outputs (graph to))}]
-    (-> graph
-      (dissoc to)
-      (assoc from new-node))))
-
-(defn fuse-transducers [graph]
-  (let [xducer (->> (for [[id node] graph
-                          :when (and (:transducer? node)
-                                  (= 1 (count (:outputs node))))
-                          :let [onodes (graph/nodes-by-link graph :inputs (fnext (first (:outputs node))))]
-                          :when (= (count onodes) 1)
-                          :let [onode (graph (:node (first onodes)))]
-                          :when (:transducer? onode)
-                          ]
-                      {:from node
-                       :to   onode
-                       })
-                 first)]
-    (if xducer
-      (recur (fuse-transducer-nodes graph (:id (:from xducer)) (:id (:to xducer))))
-      graph)))
-
-(defn remove-distributes [graph]
-  (let [id-maps (atom {})
-        graph   (reduce-kv
-                  (fn [acc id {:keys [type] :as node}]
-                    (if (= ::distribute type)
-                      (do (apply swap! id-maps assoc (interleave
-                                                       (vals (:outputs node))
-                                                       (repeat (:in (:inputs node)))))
-                          acc)
-                      (assoc acc id node)))
-                  {}
-                  graph)]
-    (reduce
-      (fn [graph {:keys [node link port]}]
-        (assoc-in graph [node :inputs port] (@id-maps link)))
-      graph
-      (->> (graph/ports graph :inputs)
-        (clj/filter (comp @id-maps :link))))))
 
 (defmacro flow
   "Creates a graph and executes it using standard optimizations."
   [& body]
   `(binding [*graph* {}]
      ~@body
-     (csp/construct-graph (remove-distributes (fuse-transducers (insert-duplicators (non-channel-edges-to-nodes *graph*)))))))
+     (csp/construct-graph (passes/run-passes *graph*))))
 
 (defmacro graph [& body]
   `(binding [*graph* {}]
      ~@body
-     (remove-distributes (fuse-transducers (insert-duplicators (non-channel-edges-to-nodes *graph*))))))
+     (passes/run-passes *graph*)))
 
 (comment (let [p (promise)]
            (flow
@@ -322,6 +204,13 @@
        (->> in# ~@(butlast body)))
      ~(last body)))
 
+(defmacro flow-result [& expr]
+  `(let [p# (promise)]
+     (df/flow
+       (df/promise-accumulator p# (do ~@expr)))
+     @p#))
+
+
 #_(naiad.backends.graphviz/output-dotfile (let [p (promise)]
                                             (graph
                                               (let [v      (take 3 [1 2 3 4])
@@ -329,6 +218,19 @@
                                                              (map dec v))]
                                                 (promise-accumulator p result))))
     "test.dot")
+
+
+(defn annotate
+  ([link k v & rest]
+    (annotate link (apply hash-map k v rest)))
+  ([link meta]
+   (annotate-link! link meta)
+   link))
+
+(defmacro blocking-io [& body]
+  (binding [*io* true]
+    ~@body))
+
 
 
 (comment

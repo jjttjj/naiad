@@ -1,9 +1,15 @@
 (ns naiad.nodes
   (:require [clojure.core :as clj]
-            [naiad.graph :refer [add-node! gen-id id? *graph* ports insert-into-graph IToEdge
+            [naiad.graph :refer [add-node! gen-id id? *graph* ports
                                  INode]]
             [naiad.backends.csp :as csp]
-            [clojure.core.async :refer [go <! >! close!] :as async]))
+            [clojure.core.async :refer [go <! >! close! thread ] :as async]))
+
+(defmacro process [{:keys [blocking-io] :as opts} & body]
+  (if blocking-io
+    `(thread)))
+
+
 
 
 (defmethod csp/construct! :naiad/map

@@ -2,14 +2,14 @@
 
 (def ^:dynamic *graph*)
 
+(def ^:dynamic *default-annotations* nil)
+
 (defprotocol INode
   (transducer? [this] "Returns true if this node can be a transducer")
   (as-transducer [this] "Create a transducer by supplying a reducer function")
   (validate [this])
   (construct [this]))
 
-(defprotocol IToEdge
-  (insert-into-graph [this graph] "Insert this non-channel edge as a new node in the graph"))
 
 
 
@@ -23,23 +23,30 @@
 
 (def id? (partial instance? Id))
 
+(defn annotate-link [graph id data]
+  (update-in graph [id] merge {:type :naiad/link-annotation
+                               :id id} data))
+
+(defn annotate-link! [id data]
+  (set! *graph* (annotate-link *graph* id data)))
+
 (defn gen-id []
-  (->Id))
+  (let [id (->Id)]
+    (when *default-annotations*
+      (annotate-link! id *default-annotations*))
+    id))
 
 (defmethod print-method Id
   [v ^java.io.Writer w]
   (.write w (str v)))
 
-(gen-id)
 
 (defn add-node [graph {:keys [id type] :as node}]
   (assert type (str "Node"  node " must have a type"))
   (let [id (or id (gen-id))]
     (assoc graph id (assoc node :id id))))
 
-(defn annotate-link [graph id data]
-  (update-in graph [id] merge {:type :naiad/link-annotation
-                               :id id} data))
+
 
 (defn add-node! [node]
   (set! *graph* (add-node *graph* node)))

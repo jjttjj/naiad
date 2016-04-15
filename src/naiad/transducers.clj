@@ -1,16 +1,36 @@
 (ns naiad.transducers
-  (:refer-clojure :exclude [first second nfirst]))
+  (:require [naiad.transducers.ioc :refer [transducer ingest emit if-value]])
+  (:refer-clojure :exclude [first nth last reduce]))
 
 
 
+(defn reduce [rf init]
+  (transducer
+    (loop [acc init]
+      (if-value [v (ingest)]
+        (let [acc (rf acc v)]
+          (println "->> " v)
+          (if (reduced? acc)
+            (emit acc)
+            (recur acc)))
+        (emit acc)))))
 
-(defn make-transducer [f]
-  (fn [xf]
-    (fn
-      ([] (xf))
-      ([acc] (xf acc))
-      ([acc itm]
-        (f acc itm)))))
+(def ^{:doc "A transducer that filters all but the first item in a tansduction"}
+  first
+  (take 1))
 
-(def first (make-transducer (fn [acc item]
-                              (reduced item))))
+(defn nth
+  "Creates a transducer that filters all but the nth item of a transduction"
+  [idx]
+  (comp (drop idx)
+        first))
+
+(def ^{:doc "A transducer that filters all but the last item in a transduction"}
+  last
+  (transducer
+    (loop [have-item? false
+           item nil]
+      (if-value [v (ingest)]
+        (recur true v)
+        (when have-item?
+          (emit item))))))

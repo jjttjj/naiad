@@ -1,13 +1,8 @@
 (ns naiad.core-test
   (:require [clojure.test :refer :all]
             [clojure.core.async :as async]
-            [naiad :as df]))
+            [naiad :as df :refer [flow-result]]))
 
-(defmacro flow-result [& expr]
-  `(let [p# (promise)]
-     (df/flow
-       (df/promise-accumulator p# (do ~@expr)))
-     @p#))
 
 (df/graph
   (df/map inc (df/map dec (df/map #(+ % %) [1 2 3]))))

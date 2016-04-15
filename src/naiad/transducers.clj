@@ -9,7 +9,6 @@
     (loop [acc init]
       (if-value [v (ingest)]
         (let [acc (rf acc v)]
-          (println "->> " v)
           (if (reduced? acc)
             (emit acc)
             (recur acc)))

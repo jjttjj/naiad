@@ -16,12 +16,10 @@
   (throw (ex-info "Can't call emit outside of a transducer macro" {})))
 
 (defn -ingest [state blk]
-  (println "Ingest")
   (ioc/aset-object state ioc/STATE-IDX blk)
   ::ingest)
 
 (defn -emit [state blk v]
-  (println "emit" v)
   (ioc/aset-all! state ioc/STATE-IDX blk)
   (let [xf (ioc/aget-object state XF-IDX)
         acc (ioc/aget-object state ACC-IDX)
@@ -31,7 +29,6 @@
       :recur)))
 
 (defn -return [state val]
-  (println "RETURN")
   (ioc/aset-all! state ACC-IDX (reduced (ioc/aget-object state ACC-IDX))))
 
 (def transducer-custom-terminators
@@ -66,18 +63,12 @@
           (ioc/run-state-machine state#)
           (xf# (unreduced (ioc/aget-object state# ACC-IDX))))
          ([acc# itm#]
-          (println "Item" itm#)
           (ioc/aset-all! state# XF-IDX xf# ACC-IDX acc#)
           (when-not (ioc/aget-object state# STARTED-IDX)
             (ioc/run-state-machine state#)
             (ioc/aset-all! state# STARTED-IDX true))
-          (println "ST " (ioc/run-state-machine
-                           (ioc/aset-all! state# ioc/VALUE-IDX itm#)))
+          (ioc/run-state-machine
+            (ioc/aset-all! state# ioc/VALUE-IDX itm#))
           (ioc/aget-object state# ACC-IDX))))))
 
-(clojure.core/transduce (transducer (println "HEy") (dotimes [x 3]
-                                                      (let [i (ingest)]
-                                                        (println "got " i)
-                                                        (emit i))))
-  conj [] (range 10))
 

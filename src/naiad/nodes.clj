@@ -144,3 +144,7 @@
 (defmethod csp/construct! :naiad/onto-chan
   [{:keys [outputs coll]}]
   (clojure.core.async/onto-chan (:out outputs) coll true))
+
+(defmethod csp/construct! :naiad/no-close
+  [{:keys [inputs outputs]}]
+  (clojure.core.async/pipe (:in inputs) (:out outputs) false))

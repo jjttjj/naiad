@@ -136,8 +136,22 @@
                   (df/merge evens odds))))
         (set (range 10)))))
 
+
+(deftest recursive-test
+  (is (= (flow-result
+           (df/with-annotations {:buffer/size 10}
+             (let [input (df/no-close [1 1 1 1])
+                   {out true rec false} (df/subscribe (partial = 10) input)]
+               (df/->map :f inc :in rec :out input)
+               (df/take 4 out))))
+        [10 10 10 10])))
+
 #_(naiad.backends.graphviz/output-dotfile (df/graph
-                                          (let [{evens true odds false} (df/subscribe even? (range 10))]
-                                            (df/merge evens odds))
+
+                                          (df/with-annotations {:buffer/size 10}
+                                            (let [input (df/no-close [1 1 1 1])
+                                                  {out true rec false} (df/subscribe (partial = 10) input)]
+                                              (df/->map :f inc :in rec :out input)
+                                              (df/take 4 out)))
                                           )
   "test.dot")

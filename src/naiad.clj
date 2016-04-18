@@ -117,6 +117,13 @@
        :outputs{:out out}})
     out))
 
+(defn no-close [in]
+  (let [out (gen-id)]
+    (add-node!
+      {:type ::no-close
+       :inputs {:in in}
+       :outputs {:out out}})
+    out))
 
 
 

@@ -16,14 +16,16 @@
                           (vswap! a conj v)))]
              (loop []
                (if-some [v (<! from)]
-                 (let [_ (rf nil v)
+                 (let [retval (rf nil v)
                        exit? (loop [[h & t] @a]
                                (when h
                                  (if (>! to h)
                                    (recur t)
                                    :exit)))]
-                   (if exit?
-                     (close! to)
+                   (if (or exit?
+                           (reduced? retval))
+                     (do (close! to)
+                         (close! from))
                      (do (vreset! a [])
                          (recur))))
 
@@ -73,10 +75,10 @@
     (count b)))
 
 
-(defn construct-channel [{:keys [existing-channel metrics buffer]}]
+(defn construct-channel [{:keys [existing-channel metrics buffer buffer/size]}]
   (cond
     existing-channel existing-channel
-    :else (let [b (or buffer (async/buffer 1))
+    :else (let [b (or buffer (async/buffer (or size 1)))
                 b (if metrics
                     (->MetricsWrappedBuffer b metrics)
                     b)]

@@ -148,3 +148,28 @@
 (defmethod csp/construct! :naiad/no-close
   [{:keys [inputs outputs]}]
   (clojure.core.async/pipe (:in inputs) (:out outputs) false))
+
+(defn close-all!
+  ([& chans-seq]
+   (doseq [chans chans-seq]
+     (doseq [c (if (map? chans)
+                 (vals chans)
+                 chans)]
+       (close! c)))))
+
+
+(defmethod csp/construct! :naiad/multiplexer
+  [{:keys [inputs outputs]}]
+  (let [out (:out outputs)
+        selector (:selector inputs)
+        closed-c (let [c (async/chan)]
+                   (close! c)
+                   c)]
+    (go (loop []
+          (if-some [idx (<! selector)]
+            (if-some [v (<! (get inputs idx closed-c))]
+              (if (>! out v)
+                (recur)
+                (close-all! inputs outputs))
+              (recur))
+            (close-all! inputs outputs))))))

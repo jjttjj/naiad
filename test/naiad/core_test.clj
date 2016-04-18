@@ -146,6 +146,21 @@
                (df/take 4 out))))
         [10 10 10 10])))
 
+
+(deftest multiplexer-test
+  (is (= (flow-result
+           (df/multiplexer [2 1 0] [[10] [11] [12]]))
+        [12 11 10]))
+
+  (is (= (flow-result
+           (->> (df/multiplexer (cycle [0 1 2]) [(range 10 100) (range 20 100) (range 30 100)])
+             (df/take 6)))
+        [10 20 30 11 21 31]))
+
+  (is (= (flow-result
+           (df/multiplexer (df/take 6 (cycle [0 1 2])) [(range 10 100) (range 20 100) (range 30 100)]))
+        [10 20 30 11 21 31])))
+
 #_(naiad.backends.graphviz/output-dotfile (df/graph
 
                                           (df/with-annotations {:buffer/size 10}

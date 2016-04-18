@@ -125,6 +125,16 @@
        :outputs {:out out}})
     out))
 
+(defn multiplexer [selector inputs]
+  (let [out (gen-id)]
+    (add-node!
+      {:type ::multiplexer
+       :input-count (count inputs)
+       :inputs (assoc (zipmap (range) inputs)
+                 :selector selector)
+       :outputs {:out out}})
+    out))
+
 
 
 (defn promise-accumulator [p input]

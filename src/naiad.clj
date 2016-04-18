@@ -135,7 +135,17 @@
        :outputs {:out out}})
     out))
 
-
+(defn demultiplexer [num-outputs input]
+  (let [selector (gen-id)
+        outputs (repeatedly num-outputs gen-id)]
+    (add-node!
+      {:type         ::demultiplexer
+       :output-count num-outputs
+       :inputs       {:in input}
+       :outputs      (assoc (zipmap (range) outputs)
+                       :selector selector)})
+    {:selector selector
+     :outputs outputs}))
 
 (defn promise-accumulator [p input]
   (add-node! {:type    ::promise-accumulator
@@ -205,10 +215,14 @@
 
 
 
-(defn parallel* [{:keys [threads]} f in]
-  (let [outs (mapv f
-               (clj/take threads (distribute in)))]
-    (apply merge outs)))
+(defn parallel* [{:keys [threads ordered?]} f in]
+  (if ordered?
+    (let [{:keys [selector outputs]} (demultiplexer threads in)]
+      (multiplexer selector (clj/map f outputs)))
+
+    (let [outs (mapv f
+                 (clj/take threads (distribute in)))]
+      (apply merge outs))))
 
 (defmacro parallel->> [opts & body]
   `(parallel* ~opts

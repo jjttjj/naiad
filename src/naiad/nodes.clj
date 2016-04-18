@@ -157,6 +157,14 @@
                  chans)]
        (close! c)))))
 
+(defn index-of [coll itm]
+  (loop [idx 0
+         s (seq coll)]
+    (if s
+      (if (= (first s) itm)
+        idx
+        (recur (inc idx) (next s)))
+      nil)))
 
 (defmethod csp/construct! :naiad/multiplexer
   [{:keys [inputs outputs]}]
@@ -172,4 +180,20 @@
                 (recur)
                 (close-all! inputs outputs))
               (recur))
+            (close-all! inputs outputs))))))
+
+(defmethod csp/construct! :naiad/demultiplexer
+  [{:keys [inputs outputs]}]
+  (let [selector (:selector outputs)
+        in (:in inputs)
+        outs (vals (dissoc outputs :selector))]
+    (go (loop []
+          (if-some [v (<! in)]
+            (let [[v c] (async/alts! (map vector outs (repeat v)))
+                  idx (index-of outs c)]
+              (if v
+                (if (>! selector idx)
+                  (recur)
+                  (close-all! inputs outputs))
+                (close-all! inputs outputs)))
             (close-all! inputs outputs))))))

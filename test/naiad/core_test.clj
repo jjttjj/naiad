@@ -185,7 +185,7 @@
                (df/multiplexer selector (map (partial df/map inc) outputs))))
           (range 1 11)))))
 
-(naiad.backends.graphviz/output-dotfile (df/graph
+#_(naiad.backends.graphviz/output-dotfile (df/graph
                                           (->> [1 2 3 4 5 6 7]
                                             (df/parallel->> {:threads 3
                                                              :ordered? true}

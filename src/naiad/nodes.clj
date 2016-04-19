@@ -3,7 +3,7 @@
             [naiad.graph :refer [add-node! gen-id id? *graph* ports
                                  INode]]
             [naiad.backends.csp :as csp]
-            [clojure.core.async :refer [go <! >! close! thread ] :as async]))
+            [clojure.core.async :refer [go <! >! close! thread] :as async]))
 
 (defmacro process [{:keys [blocking-io] :as opts} & body]
   (if blocking-io
@@ -18,7 +18,7 @@
     (let [out (:out outputs)]
       (loop [acc []]
         (if (< (count acc) (count inputs))
-          (if-let [v (<! (inputs (count acc)))]
+          (if-some [v (<! (inputs (count acc)))]
             (recur (conj acc v))
             (do (close! out)
                 (doseq [[k v] inputs]
@@ -34,8 +34,8 @@
 
 (defmacro gen-transducer-node [f]
   `(fn ~f [& args#]
-     (let [fargs#  (butlast args#)
-           input#  (last args#)
+     (let [fargs# (butlast args#)
+           input# (last args#)
            output# (gen-id)]
        (add-node!
          {:type        :generic-transducer
@@ -52,8 +52,8 @@
          ([first# & rargs#]
            (~fname (apply hash-map first# rargs#)))
          ([args#]
-           (let [fargs#  (extractor# args#)
-                 input#  (or (:in args#) (gen-id))
+           (let [fargs# (extractor# args#)
+                 input# (or (:in args#) (gen-id))
                  output# (or (:out args#) (gen-id))]
              (add-node!
                {:type        :generic-transducer
@@ -82,7 +82,7 @@
 
 (defmethod csp/construct! :naiad/duplicate
   [{:keys [inputs outputs]}]
-  (let [in   (:in inputs)
+  (let [in (:in inputs)
         outs (vec (vals outputs))]
     (go (loop []
           (if-some [v (<! in)]
@@ -121,7 +121,7 @@
   [{:keys [topic-fn inputs outputs default-key default-c]}]
   (let [default-c (or (and default-key (default-key outputs))
                     default-c)
-        in-c      (:in inputs)]
+        in-c (:in inputs)]
     (go
       (loop []
         (if-some [v (<! in-c)]
@@ -197,3 +197,24 @@
                   (close-all! inputs outputs))
                 (close-all! inputs outputs)))
             (close-all! inputs outputs))))))
+
+(defmethod csp/construct! :naiad/mapcat-async
+  [{:keys [inputs outputs f] :as node}]
+  (go
+    (let [out (:out outputs)]
+      (loop [acc []]
+        (if (< (count acc) (count inputs))
+          (if-some [v (<! (inputs (count acc)))]
+            (recur (conj acc v))
+            (close-all! inputs outputs))
+          (let [continue? (let [c (async/chan 1)]
+                            (apply f c acc)
+                            (loop []
+                              (if-some [v (<! c)]
+                                (if (>! out v)
+                                  (recur)
+                                  false)
+                                true)))]
+            (if continue?
+              (recur [])
+              (close-all! inputs outputs))))))))

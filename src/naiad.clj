@@ -236,6 +236,15 @@
        (promise-accumulator p# (do ~@expr)))
      @p#))
 
+(defn mapcat-async [f & ins]
+  (let [out (gen-id)]
+    (add-node!
+      {:type ::mapcat-async
+       :f f
+       :inputs (zipmap (range) ins)
+       :outputs {:out out}})
+    out))
+
 
 #_(naiad.backends.graphviz/output-dotfile (let [p (promise)]
                                             (graph

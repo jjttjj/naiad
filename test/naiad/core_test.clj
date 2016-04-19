@@ -185,6 +185,43 @@
                (df/multiplexer selector (map (partial df/map inc) outputs))))
           (range 1 11)))))
 
+
+(deftest mapcat-async-test
+  (let [inc-dec (fn [c v]
+                  (async/put! c (inc v))
+                  (async/put! c (dec v))
+                  (async/close! c))]
+    (testing "basic usage"
+      (is (= (flow-result
+               (df/mapcat-async
+                 inc-dec
+                 (range 2)))
+            [1 -1 2 0])))
+
+    (testing "early termination before"
+      (is (= (flow-result
+               (df/mapcat-async
+                 inc-dec
+                 (df/take 2 (range 3))))
+            [1 -1 2 0])))
+
+    (testing "early termination after"
+      (is (= (flow-result
+               (df/take 3 (df/mapcat-async
+                            inc-dec
+                            (range 3))))
+            [1 -1 2])))
+
+
+    (testing "call call flow inside mapcat-async"
+      (is (= (flow-result
+               (df/mapcat-async
+                 (fn [c v]
+                   (df/flow
+                     (df/->map :f inc :out c :in (range v (+ v 10)))))
+                 [10 20 30]))
+            (range 11 41))))))
+
 #_(naiad.backends.graphviz/output-dotfile (df/graph
                                           (->> [1 2 3 4 5 6 7]
                                             (df/parallel->> {:threads 3

@@ -52,10 +52,19 @@ This same code written in Naiad would look something like this:
 
 ```clojure
 
-(require '[naiad :as n])
+(require '[naiad :as n]
+         '[clojure.core.async :as a])
 
+(def output-chan (a/chan))
+
+(go-loop []
+  (if-some [x (<! output-chan)]
+    (do (println "output: " x)
+        (recur))
+    (println "output chan closed")))
+  
 (n/flow
-  (let [in-c (->> (n/range 1000)
+  (let [in-c (->> (a/to-chan! (range 1000))
                   (n/map (fn [x] (* x x))))
 
         odds (->> in-c

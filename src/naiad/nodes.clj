@@ -33,9 +33,9 @@
 
 
 (defmacro gen-transducer-node [f]
-  `(fn ~f [& args#]
-     (let [fargs# (butlast args#)
-           input# (last args#)
+  `(fn ~(symbol (name f)) [& args#]
+     (let [fargs#  (butlast args#)
+           input#  (last args#)
            output# (gen-id)]
        (add-node!
          {:type        :generic-transducer
